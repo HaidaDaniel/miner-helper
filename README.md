@@ -22,6 +22,8 @@ git clone <URL-этого-репозитория> wildrig-miner
 cd wildrig-miner
 cp profiles/pearlhash.example.conf profiles/pearlhash.conf
 nano profiles/pearlhash.conf   # замените YOUR_WALLET_ADDRESS, оставив .{RIG_NAME}
+cp gpu-settings.conf.example gpu-settings.conf
+nano gpu-settings.conf        # если GPU другие — установите GPU_SETTINGS_ENABLED=0
 ./install.sh
 ```
 
@@ -29,6 +31,26 @@ nano profiles/pearlhash.conf   # замените YOUR_WALLET_ADDRESS, оста�
 WildRig Multi с [официальной страницы релизов](https://github.com/andru-kun/wildrig-multi/releases),
 создаст systemd-сервис и включит его при загрузке Ubuntu. У пользователя,
 который запускает установщик, должны быть права `sudo`.
+
+### Новый риг с тем же кошельком
+
+Текущий профиль — Pearlhash. На новом риге используйте тот же адрес из
+`profiles/pearlhash.conf` старой машины. Чтобы не копировать его вручную,
+перенесите этот локальный файл на новый риг по SSH после клонирования:
+
+```bash
+scp USER@OLD_RIG:/path/to/miner/profiles/pearlhash.conf ./profiles/pearlhash.conf
+./install.sh --profile pearlhash
+```
+
+Либо создайте профиль из примера выше и вставьте туда тот же адрес, сохранив
+суффикс `.{RIG_NAME}`. Установщик подставит hostname нового Ubuntu в суффикс;
+кошелёк и пул останутся прежними. Файл с адресом игнорируется Git, поэтому он
+не попадёт в публичный репозиторий.
+
+Если на новом риге другие видеокарты, перед установкой отключите перенесённые
+настройки разгона в `gpu-settings.conf` (`GPU_SETTINGS_ENABLED=0`) или замените
+их значениями для нового железа.
 
 По умолчанию выбирается профиль `pearlhash`. Укажите другое имя рига и/или
 профиль параметрами установщика:
