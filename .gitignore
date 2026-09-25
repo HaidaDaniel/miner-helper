@@ -1,0 +1,18 @@
+# Runtime data and the downloaded miner binary
+miner.log
+*.log
+/wildrig-multi
+/wildrig-version
+
+# Machine-local settings
+/current-profile
+/rig-name
+/gpu-settings.conf
+
+# Wallets and pool credentials stay local. Commit only the example profiles.
+/profiles/*.conf
+!/profiles/*.example.conf
+
+# Editor/OS files
+.DS_Store
+*~

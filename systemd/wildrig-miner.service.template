@@ -1,0 +1,25 @@
+[Unit]
+Description=WildRig GPU miner
+Wants=network-online.target
+After=network-online.target nvidia-persistenced.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{BASE_DIR}}
+UMask=0077
+ExecStartPre=+{{BASE_DIR}}/apply-gpu-settings.sh
+ExecStart={{BASE_DIR}}/run-miner.sh
+ExecStop=/bin/kill -s INT $MAINPID
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+KillSignal=SIGINT
+TimeoutStopSec=10
+StandardOutput=append:{{BASE_DIR}}/miner.log
+StandardError=append:{{BASE_DIR}}/miner.log
+
+[Install]
+WantedBy=multi-user.target

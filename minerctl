@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+BASE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SERVICE="wildrig-miner.service"
+PROFILES_DIR="$BASE_DIR/profiles"
+CURRENT_FILE="$BASE_DIR/current-profile"
+SYSTEM_UNIT="/etc/systemd/system/$SERVICE"
+
+die() {
+    echo "Ошибка: $*" >&2
+    exit 1
+}
+
+valid_profile() {
+    [[ "$1" =~ ^[a-zA-Z0-9._-]+$ ]] && [[ -r "$PROFILES_DIR/$1.conf" ]]
+}
+
+current_profile() {
+    if [[ -r "$CURRENT_FILE" ]]; then
+        tr -d '[:space:]' < "$CURRENT_FILE"
+    else
+        printf '%s\n' pearlhash
+    fi
+}
+
+systemctl_query() {
+    if [[ -e "$SYSTEM_UNIT" ]]; then
+        /usr/bin/systemctl "$@"
+    else
+        /usr/bin/systemctl --user "$@"
+    fi
+}
+
+systemctl_mutate() {
+    if [[ -e "$SYSTEM_UNIT" ]]; then
+        if [[ "$EUID" -eq 0 ]]; then
+            /usr/bin/systemctl "$@"
+        else
+            sudo /usr/bin/systemctl "$@"
+        fi
+    else
+        /usr/bin/systemctl --user "$@"
+    fi
+}
+
+stop_service() {
+    systemctl_mutate stop "$SERVICE"
+    systemctl_mutate reset-failed "$SERVICE" || true
+}
+
+list_profiles() {
+    local file name current
+    current="$(current_profile)"
+    while IFS= read -r file; do
+        name="${file##*/}"
+        name="${name%.conf}"
+        if [[ "$name" == "$current" ]]; then
+            printf '* %s\n' "$name"
+        else
+            printf '  %s\n' "$name"
+        fi
+    done < <(find "$PROFILES_DIR" -maxdepth 1 -type f -name '*.conf' -printf '%f\n' | sort)
+}
+
+switch_profile() {
+    local new_profile="$1" old_profile was_active tmp
+    valid_profile "$new_profile" || die "профиль не найден или имеет недопустимое имя: $new_profile"
+    old_profile="$(current_profile)"
+
+    if [[ "$old_profile" == "$new_profile" ]]; then
+        echo "Уже выбран профиль: $new_profile"
+        return 0
+    fi
+
+    was_active=0
+    if systemctl_query is-active --quiet "$SERVICE"; then
+        was_active=1
+        stop_service
+    fi
+
+    tmp="$(mktemp "$BASE_DIR/.current-profile.XXXXXX")"
+    printf '%s\n' "$new_profile" > "$tmp"
+    chmod 0600 "$tmp"
+    mv -f "$tmp" "$CURRENT_FILE"
+
+    if (( was_active )); then
+        if ! systemctl_mutate start "$SERVICE"; then
+            printf '%s\n' "$old_profile" > "$CURRENT_FILE"
+            systemctl_mutate start "$SERVICE" || true
+            die "не удалось запустить новый профиль; возвращён профиль $old_profile"
+        fi
+    fi
+
+    echo "Выбран профиль: $new_profile"
+}
+
+usage() {
+    cat <<'EOF'
+Использование: minerctl <команда> [профиль]
+
+Команды:
+  start                  запустить майнер
+  stop                   остановить майнер до следующего запуска
+  restart                перезапустить майнер
+  enable                 включить автозапуск и запустить сейчас
+  disable                отключить автозапуск и остановить сейчас
+  status                 показать статус systemd
+  list                   показать профили (* — текущий)
+  switch <профиль>       выбрать профиль; если майнер запущен — перезапустить
+EOF
+}
+
+command="${1:-}"
+case "$command" in
+    start)
+        systemctl_mutate start "$SERVICE"
+        ;;
+    stop)
+        stop_service
+        ;;
+    restart)
+        systemctl_mutate restart "$SERVICE"
+        ;;
+    enable)
+        systemctl_mutate enable --now "$SERVICE"
+        ;;
+    disable)
+        systemctl_mutate disable --now "$SERVICE"
+        systemctl_mutate reset-failed "$SERVICE" || true
+        ;;
+    status)
+        systemctl_query --no-pager status "$SERVICE"
+        ;;
+    list)
+        list_profiles
+        ;;
+    switch)
+        [[ $# -eq 2 ]] || die "укажите имя профиля"
+        switch_profile "$2"
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
