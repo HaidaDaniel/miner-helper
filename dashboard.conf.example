@@ -1,4 +1,3 @@
-# Only this machine can open the dashboard by default.
-# Set to 0.0.0.0 to allow devices on the network to connect.
-DASHBOARD_HOST=127.0.0.1
+# Listen on all network interfaces so other devices can open the panel.
+DASHBOARD_HOST=0.0.0.0
 DASHBOARD_PORT=8080

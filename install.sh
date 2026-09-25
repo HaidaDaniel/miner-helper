@@ -103,7 +103,6 @@ source /etc/os-release
 [[ "${ID:-}" == ubuntu ]] || die "установщик рассчитан на Ubuntu"
 [[ "$BASE_DIR" != *[[:space:]]* ]] || die "путь к репозиторию не должен содержать пробелы"
 command -v sudo >/dev/null || die "не найден sudo"
-sudo -v
 
 RUN_USER="$(id -un)"
 RUN_GROUP="$(id -gn)"
@@ -150,6 +149,10 @@ fi
 printf '%s\n' "$RIG_NAME" > "$BASE_DIR/rig-name"
 chmod 0644 "$BASE_DIR/rig-name"
 
+# Fail before installing packages or enabling services if the selected profile
+# still has an empty value or an example wallet placeholder.
+"$BASE_DIR/run-miner.sh" --check-config "$PROFILE_NAME"
+
 if [[ ! -f "$BASE_DIR/gpu-settings.conf" && -f "$BASE_DIR/gpu-settings.conf.example" ]]; then
     install -m 0644 "$BASE_DIR/gpu-settings.conf.example" "$BASE_DIR/gpu-settings.conf"
 fi
@@ -157,14 +160,41 @@ if [[ ! -f "$BASE_DIR/dashboard.conf" && -f "$BASE_DIR/dashboard.conf.example" ]
     install -m 0600 "$BASE_DIR/dashboard.conf.example" "$BASE_DIR/dashboard.conf"
 fi
 
+sudo -v
 echo "Установка пакетов Ubuntu..."
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl ocl-icd-libopencl1 python3 python3-flask tar ubuntu-drivers-common
+sudo apt-get install -y ca-certificates curl ocl-icd-libopencl1 openssl python3 python3-flask python3-pam tar ubuntu-drivers-common
 ensure_nvidia_driver
 
-if grep -Eq 'YOUR_WALLET_ADDRESS|CHANGE_ME|REPLACE_ME' "$PROFILE_FILE"; then
-    die "в $PROFILE_FILE укажите адрес кошелька или логин пула в MINER_USER, затем повторите ./install.sh"
+if [[ ! -s "$BASE_DIR/dashboard-secret" ]]; then
+    python3 -c 'import secrets; print(secrets.token_hex(32))' > "$BASE_DIR/dashboard-secret"
 fi
+chmod 0600 "$BASE_DIR/dashboard-secret"
+
+if [[ ! -s "$BASE_DIR/dashboard-cert.pem" || ! -s "$BASE_DIR/dashboard-key.pem" ]]; then
+    rm -f "$BASE_DIR/dashboard-cert.pem" "$BASE_DIR/dashboard-key.pem"
+    dashboard_hostname="$(hostname -s)"
+    dashboard_fqdn="$(hostname -f 2>/dev/null || printf '%s' "$dashboard_hostname")"
+    dashboard_san="DNS:$dashboard_hostname,IP:127.0.0.1"
+    if [[ "$dashboard_fqdn" != "$dashboard_hostname" ]]; then
+        dashboard_san+=",DNS:$dashboard_fqdn"
+    fi
+    for dashboard_ip in $(hostname -I 2>/dev/null); do
+        dashboard_san+=",IP:$dashboard_ip"
+    done
+    (
+        umask 077
+        openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 825 \
+            -keyout "$BASE_DIR/dashboard-key.pem" \
+            -out "$BASE_DIR/dashboard-cert.pem" \
+            -subj "/CN=$dashboard_hostname" \
+            -addext "subjectAltName=$dashboard_san" >/dev/null 2>&1
+    ) || die "не удалось создать TLS-сертификат веб-панели"
+    chmod 0600 "$BASE_DIR/dashboard-key.pem"
+    chmod 0644 "$BASE_DIR/dashboard-cert.pem"
+fi
+chmod 0600 "$BASE_DIR/dashboard-key.pem"
+chmod 0644 "$BASE_DIR/dashboard-cert.pem"
 
 if [[ -n "$MINER_BINARY" ]]; then
     [[ -x "$MINER_BINARY" ]] || die "бинарник не найден или не исполняемый: $MINER_BINARY"
@@ -283,4 +313,4 @@ echo "Профиль: $PROFILE_NAME"
 echo "Имя рига: $RIG_NAME"
 echo "Бинарник: $BASE_DIR/wildrig-multi"
 echo "Управление: $BASE_DIR/minerctl status|start|stop|list|switch <профиль>"
-echo "Веб-панель: http://127.0.0.1:8080 (настройки в dashboard.conf)"
+echo "Веб-панель: https://IP-РИГА:8080 (вход паролем Ubuntu пользователя $RUN_USER)"

@@ -9,6 +9,9 @@ miner.log
 /rig-name
 /gpu-settings.conf
 /dashboard.conf
+/dashboard-secret
+/dashboard-cert.pem
+/dashboard-key.pem
 
 # Wallets and pool credentials stay local. Commit only the example profiles.
 /profiles/*.conf

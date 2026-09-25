@@ -49,6 +49,10 @@ stop_service() {
     systemctl_mutate reset-failed "$SERVICE" || true
 }
 
+check_profile_config() {
+    "$BASE_DIR/run-miner.sh" --check-config "${1:-$(current_profile)}"
+}
+
 list_profiles() {
     local file name current
     current="$(current_profile)"
@@ -66,6 +70,7 @@ list_profiles() {
 switch_profile() {
     local new_profile="$1" old_profile was_active tmp
     valid_profile "$new_profile" || die "профиль не найден или имеет недопустимое имя: $new_profile"
+    check_profile_config "$new_profile"
     old_profile="$(current_profile)"
 
     if [[ "$old_profile" == "$new_profile" ]]; then
@@ -114,15 +119,18 @@ EOF
 command="${1:-}"
 case "$command" in
     start)
+        check_profile_config
         systemctl_mutate start "$SERVICE"
         ;;
     stop)
         stop_service
         ;;
     restart)
+        check_profile_config
         systemctl_mutate restart "$SERVICE"
         ;;
     enable)
+        check_profile_config
         systemctl_mutate enable --now "$SERVICE"
         ;;
     disable)
