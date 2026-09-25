@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 BASE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SERVICE="wildrig-miner.service"
+DASHBOARD_SERVICE="rig-dashboard.service"
 WILDRIG_VERSION="${WILDRIG_VERSION:-latest}"
 MINER_BINARY=""
 RIG_NAME_ARG=""
@@ -152,10 +153,13 @@ chmod 0644 "$BASE_DIR/rig-name"
 if [[ ! -f "$BASE_DIR/gpu-settings.conf" && -f "$BASE_DIR/gpu-settings.conf.example" ]]; then
     install -m 0644 "$BASE_DIR/gpu-settings.conf.example" "$BASE_DIR/gpu-settings.conf"
 fi
+if [[ ! -f "$BASE_DIR/dashboard.conf" && -f "$BASE_DIR/dashboard.conf.example" ]]; then
+    install -m 0600 "$BASE_DIR/dashboard.conf.example" "$BASE_DIR/dashboard.conf"
+fi
 
 echo "Установка пакетов Ubuntu..."
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl ocl-icd-libopencl1 python3 tar ubuntu-drivers-common
+sudo apt-get install -y ca-certificates curl ocl-icd-libopencl1 python3 python3-flask tar ubuntu-drivers-common
 ensure_nvidia_driver
 
 if grep -Eq 'YOUR_WALLET_ADDRESS|CHANGE_ME|REPLACE_ME' "$PROFILE_FILE"; then
@@ -215,7 +219,9 @@ if [[ ! -f "$BASE_DIR/gpu-settings.conf" ]]; then
 fi
 
 tmp_unit="$(mktemp)"
-trap 'rm -f "$tmp_unit"' EXIT
+tmp_dashboard_unit="$(mktemp)"
+tmp_sudoers="$(mktemp)"
+trap 'rm -f "$tmp_unit" "$tmp_dashboard_unit" "$tmp_sudoers"' EXIT
 python3 - "$BASE_DIR/systemd/wildrig-miner.service.template" "$tmp_unit" "$RUN_USER" "$RUN_GROUP" "$BASE_DIR" <<'PY'
 import pathlib
 import sys
@@ -231,15 +237,41 @@ for key, value in {
 pathlib.Path(destination).write_text(content)
 PY
 
+python3 - "$BASE_DIR/systemd/rig-dashboard.service.template" "$tmp_dashboard_unit" "$RUN_USER" "$RUN_GROUP" "$BASE_DIR" <<'PY'
+import pathlib
+import sys
+
+template, destination, user, group, base_dir = sys.argv[1:]
+content = pathlib.Path(template).read_text()
+for key, value in {
+    "{{USER}}": user,
+    "{{GROUP}}": group,
+    "{{BASE_DIR}}": base_dir,
+}.items():
+    content = content.replace(key, value)
+pathlib.Path(destination).write_text(content)
+PY
+
+# Let the dashboard account control only the miner service without a TTY.
+cat > "$tmp_sudoers" <<EOF
+$RUN_USER ALL=(root) NOPASSWD: /usr/bin/systemctl start wildrig-miner.service, /usr/bin/systemctl stop wildrig-miner.service, /usr/bin/systemctl restart wildrig-miner.service, /usr/bin/systemctl reset-failed wildrig-miner.service
+EOF
+chmod 0440 "$tmp_sudoers"
+sudo visudo -cf "$tmp_sudoers" >/dev/null || die "не удалось проверить правило sudo для веб-панели"
+sudo install -o root -g root -m 0440 "$tmp_sudoers" /etc/sudoers.d/wildrig-dashboard
+
 systemd_unit="/etc/systemd/system/$SERVICE"
 sudo systemctl stop "$SERVICE" >/dev/null 2>&1 || true
 sudo install -o root -g root -m 0644 "$tmp_unit" "$systemd_unit"
+sudo systemctl stop "$DASHBOARD_SERVICE" >/dev/null 2>&1 || true
+sudo install -o root -g root -m 0644 "$tmp_dashboard_unit" "/etc/systemd/system/$DASHBOARD_SERVICE"
 sudo systemctl daemon-reload
 
 # Disable the older per-user unit if this checkout is being upgraded in place.
 systemctl --user disable --now "$SERVICE" >/dev/null 2>&1 || true
 
 sudo systemctl enable --now "$SERVICE"
+sudo systemctl enable --now "$DASHBOARD_SERVICE"
 
 echo
 echo "Установлено: $SERVICE"
@@ -247,3 +279,4 @@ echo "Профиль: $PROFILE_NAME"
 echo "Имя рига: $RIG_NAME"
 echo "Бинарник: $BASE_DIR/wildrig-multi"
 echo "Управление: $BASE_DIR/minerctl status|start|stop|list|switch <профиль>"
+echo "Веб-панель: http://127.0.0.1:8080 (настройки в dashboard.conf)"

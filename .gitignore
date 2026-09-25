@@ -8,6 +8,7 @@ miner.log
 /current-profile
 /rig-name
 /gpu-settings.conf
+/dashboard.conf
 
 # Wallets and pool credentials stay local. Commit only the example profiles.
 /profiles/*.conf

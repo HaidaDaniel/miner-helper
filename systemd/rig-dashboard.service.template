@@ -1,0 +1,22 @@
+[Unit]
+Description=WildRig web dashboard
+Wants=network-online.target
+After=network-online.target wildrig-miner.service
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{BASE_DIR}}
+EnvironmentFile=-{{BASE_DIR}}/dashboard.conf
+ExecStart=/usr/bin/python3 {{BASE_DIR}}/dashboard/app.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths={{BASE_DIR}}
+
+[Install]
+WantedBy=multi-user.target
