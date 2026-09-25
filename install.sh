@@ -257,8 +257,12 @@ cat > "$tmp_sudoers" <<EOF
 $RUN_USER ALL=(root) NOPASSWD: /usr/bin/systemctl start wildrig-miner.service, /usr/bin/systemctl stop wildrig-miner.service, /usr/bin/systemctl restart wildrig-miner.service, /usr/bin/systemctl reset-failed wildrig-miner.service
 EOF
 chmod 0440 "$tmp_sudoers"
-sudo visudo -cf "$tmp_sudoers" >/dev/null || die "не удалось проверить правило sudo для веб-панели"
-sudo install -o root -g root -m 0440 "$tmp_sudoers" /etc/sudoers.d/wildrig-dashboard
+sudo install -o root -g root -m 0440 "$tmp_sudoers" /etc/sudoers.d/wildrig-dashboard.tmp
+if ! sudo visudo -cf /etc/sudoers.d/wildrig-dashboard.tmp >/dev/null; then
+    sudo rm -f /etc/sudoers.d/wildrig-dashboard.tmp
+    die "не удалось проверить правило sudo для веб-панели"
+fi
+sudo mv -f /etc/sudoers.d/wildrig-dashboard.tmp /etc/sudoers.d/wildrig-dashboard
 
 systemd_unit="/etc/systemd/system/$SERVICE"
 sudo systemctl stop "$SERVICE" >/dev/null 2>&1 || true
