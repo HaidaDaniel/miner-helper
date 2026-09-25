@@ -6,16 +6,11 @@
 
 ## Установка на новую Ubuntu
 
-Перед установкой настройте драйвер видеокарты. Для NVIDIA, если `nvidia-smi`
-ещё не работает, установите рекомендуемый драйвер Ubuntu и перезагрузитесь:
-
-```bash
-sudo ubuntu-drivers install
-sudo reboot
-```
-
-Затем продолжите установку репозитория. Это рекомендуемый Ubuntu способ
-установки драйвера; см. [документацию Ubuntu](https://ubuntu.com/server/docs/how-to/graphics/install-nvidia-drivers/).
+Установщик сам проверит NVIDIA GPU и установит рекомендуемый драйвер Ubuntu,
+если `nvidia-smi` ещё не работает. Если потребуется перезагрузка, скрипт
+остановится и попросит перезагрузить машину; после входа запустите его повторно.
+Secure Boot может потребовать подтверждения MOK. Используется рекомендуемый
+Ubuntu способ установки драйверов: [документация Ubuntu](https://ubuntu.com/server/docs/how-to/graphics/install-nvidia-drivers/).
 
 ```bash
 git clone <URL-этого-репозитория> wildrig-miner

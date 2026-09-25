@@ -13,6 +13,41 @@ die() {
     exit 1
 }
 
+has_nvidia_gpu() {
+    local vendor_file
+    shopt -s nullglob
+    for vendor_file in /sys/bus/pci/devices/*/vendor; do
+        [[ -r "$vendor_file" ]] || continue
+        [[ "$(<"$vendor_file")" == "0x10de" ]] && return 0
+    done
+    return 1
+}
+
+ensure_nvidia_driver() {
+    if ! has_nvidia_gpu; then
+        echo "NVIDIA GPU не обнаружена; автоматическая установка NVIDIA-драйвера пропущена."
+        return 0
+    fi
+
+    if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
+        echo "NVIDIA-драйвер уже работает."
+        return 0
+    fi
+
+    echo "Обнаружена NVIDIA GPU без работающего драйвера. Устанавливаю рекомендуемый драйвер Ubuntu..."
+    sudo ubuntu-drivers install
+
+    if ! command -v nvidia-smi >/dev/null || ! nvidia-smi -L >/dev/null 2>&1; then
+        cat >&2 <<'EOF'
+Драйвер установлен, но GPU ещё недоступна. Перезагрузите Ubuntu и запустите
+./install.sh повторно. Если после перезагрузки nvidia-smi не работает,
+проверьте Secure Boot/MOK и сообщения драйвера.
+EOF
+        exit 10
+    fi
+    echo "NVIDIA-драйвер установлен и GPU доступна."
+}
+
 usage() {
     cat <<'EOF'
 Использование: ./install.sh [параметры]
@@ -99,9 +134,6 @@ PROFILE_NAME="$(tr -d '[:space:]' < "$BASE_DIR/current-profile")"
 [[ "$PROFILE_NAME" =~ ^[a-zA-Z0-9._-]+$ ]] || die "некорректный профиль в current-profile"
 PROFILE_FILE="$BASE_DIR/profiles/$PROFILE_NAME.conf"
 [[ -r "$PROFILE_FILE" ]] || die "нет файла $PROFILE_FILE"
-if grep -Eq 'YOUR_WALLET_ADDRESS|CHANGE_ME|REPLACE_ME' "$PROFILE_FILE"; then
-    die "в $PROFILE_FILE укажите свой адрес кошелька или логин пула в MINER_USER"
-fi
 
 if [[ -n "$RIG_NAME_ARG" ]]; then
     RIG_NAME="$RIG_NAME_ARG"
@@ -123,7 +155,12 @@ fi
 
 echo "Установка пакетов Ubuntu..."
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl ocl-icd-libopencl1 python3 tar
+sudo apt-get install -y ca-certificates curl ocl-icd-libopencl1 python3 tar ubuntu-drivers-common
+ensure_nvidia_driver
+
+if grep -Eq 'YOUR_WALLET_ADDRESS|CHANGE_ME|REPLACE_ME' "$PROFILE_FILE"; then
+    die "в $PROFILE_FILE укажите адрес кошелька или логин пула в MINER_USER, затем повторите ./install.sh"
+fi
 
 if [[ -n "$MINER_BINARY" ]]; then
     [[ -x "$MINER_BINARY" ]] || die "бинарник не найден или не исполняемый: $MINER_BINARY"

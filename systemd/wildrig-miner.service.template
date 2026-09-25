@@ -1,6 +1,6 @@
 [Unit]
 Description=WildRig GPU miner
-Wants=network-online.target
+Wants=network-online.target nvidia-persistenced.service
 After=network-online.target nvidia-persistenced.service
 StartLimitIntervalSec=0
 
